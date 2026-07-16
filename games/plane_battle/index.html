@@ -1,0 +1,44 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>飞机大战 - Aircraft Battle</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:#000;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  min-height:100vh;
+  font-family:"Microsoft YaHei","Segoe UI",sans-serif;
+  overflow:hidden;
+}
+#game-wrapper{
+  position:relative;
+  border:2px solid rgba(255,255,255,0.1);
+  border-radius:8px;
+  box-shadow:0 0 40px rgba(0,100,255,0.2);
+}
+canvas{display:block;background:#1e1e28}
+#back-btn{
+  position:fixed;top:16px;left:16px;
+  color:rgba(255,255,255,0.4);
+  text-decoration:none;font-size:14px;
+  padding:6px 14px;border-radius:6px;
+  background:rgba(255,255,255,0.05);
+  transition:all 0.2s;
+  z-index:10;
+}
+#back-btn:hover{color:#fff;background:rgba(255,255,255,0.12)}
+</style>
+</head>
+<body>
+<a id="back-btn" href="../">← 返回游戏中心</a>
+<div id="game-wrapper">
+  <canvas id="gameCanvas" width="480" height="700"></canvas>
+</div>
+<script src="game.js"></script>
+</body>
+</html>

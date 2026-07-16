@@ -1,0 +1,56 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>游戏中心 - Game Hub</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>🎮 游戏中心</h1>
+  <p>选择游戏开始游玩</p>
+</header>
+
+<main class="game-grid">
+  <a href="games/plane_battle/" class="game-card">
+    <div class="card-preview" style="background: linear-gradient(135deg, #0a1628, #1a2a5e);">
+      <div class="preview-icon">✈️</div>
+    </div>
+    <div class="card-info">
+      <h2>飞机大战</h2>
+      <p>经典的街机射击游戏，控制战机消灭敌人</p>
+      <div class="card-tags">
+        <span class="tag">动作</span>
+        <span class="tag">射击</span>
+      </div>
+    </div>
+  </a>
+
+  <a href="games/_template/" class="game-card placeholder">
+    <div class="card-preview">
+      <div class="preview-icon">➕</div>
+    </div>
+    <div class="card-info">
+      <h2>更多游戏即将上线</h2>
+      <p>新的游戏正在开发中...</p>
+    </div>
+  </a>
+</main>
+
+<footer>
+  <p>💡 按 <kbd>F11</kbd> 全屏体验更佳</p>
+</footer>
+
+<script>
+document.querySelectorAll(".game-card:not(.placeholder)").forEach(card => {
+  card.addEventListener("mouseenter", () => {
+    card.style.transform = "translateY(-6px) scale(1.02)";
+  });
+  card.addEventListener("mouseleave", () => {
+    card.style.transform = "";
+  });
+});
+</script>
+</body>
+</html>

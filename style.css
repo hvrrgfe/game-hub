@@ -1,0 +1,75 @@
+﻿* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+  color: #fff;
+  min-height: 100vh;
+}
+
+header {
+  text-align: center;
+  padding: 48px 20px 24px;
+}
+header h1 { font-size: 42px; margin-bottom: 8px; letter-spacing: 2px; }
+header p { color: #aaa; font-size: 16px; }
+
+.game-grid {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 24px;
+}
+
+.game-card {
+  text-decoration: none;
+  color: #fff;
+  background: rgba(255,255,255,0.06);
+  border-radius: 16px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  border: 1px solid rgba(255,255,255,0.08);
+  backdrop-filter: blur(4px);
+}
+.game-card:hover {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(100,200,255,0.3);
+  box-shadow: 0 8px 32px rgba(0,150,255,0.15);
+}
+
+.card-preview {
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1a1a2e, #16213e);
+}
+.preview-icon { font-size: 64px; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4)); }
+.placeholder .card-preview { background: rgba(255,255,255,0.03); }
+.placeholder .preview-icon { font-size: 48px; opacity: 0.4; }
+
+.card-info { padding: 16px 20px 20px; }
+.card-info h2 { font-size: 20px; margin-bottom: 6px; }
+.card-info p { font-size: 14px; color: #aaa; line-height: 1.5; }
+.card-tags { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+.tag {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: rgba(100,200,255,0.15);
+  color: #8cf;
+}
+
+footer {
+  text-align: center;
+  padding: 32px;
+  color: #555;
+}
+footer kbd {
+  background: rgba(255,255,255,0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+}
