@@ -70,7 +70,7 @@ function stopBGM(){if(bgmSrc){try{bgmSrc.stop()}catch(e){}}bgmPlaying=false}
 
 // ============ Game ============
 const GROUND_Y=250;
-let state="menu",score=0,highScore=0,gameOverTime=0;
+let state="menu",score=0,highScore=0,gameOverTime=0,soulActive=0;
 let speed=6,baseSpeed=6,obstacles=[],groundX=0;
 let frame=0,night=false,nightTimer=0;
 
@@ -100,10 +100,17 @@ function spawnObstacle(){
     // Pterodactyl
     let y=GROUND_Y-60-Math.random()*40;
     obstacles.push({type:"bird",x:W+20,y:y,w:42,h:30,passed:false,wing:0});
+  }else if(score>300&&r<0.35){
+    // Meteor from sky
+    obstacles.push({type:"meteor",x:30+Math.random()*(W-80),y:-40,w:30,h:30,vy:3+speed*0.3,vx:-2-Math.random()*3,passed:false});
+  }else if(score>150&&r<0.5){
+    // UT Bone (ground)
+    let h=20+Math.random()*30;
+    obstacles.push({type:"bone",x:W+20,y:GROUND_Y-h,w:16,h:h,ang:Math.random()*0.4-0.2,passed:false});
   }else{
     let type=r<0.6?"small":"large";
     let w=type==="small"?20:34,h=type==="small"?36:50;
-    obstacles.push({type,type,x:W+20,y:GROUND_Y-h,w,h,passed:false});
+    obstacles.push({type:type,x:W+20,y:GROUND_Y-h,w:type==="small"?30:44,h:type==="small"?36:50,passed:false});
   }
 }
 
@@ -143,6 +150,10 @@ function update(){
   // Spawn obstacles
   let spawnInt=Math.max(60,120-speed*4);
   if(frame%Math.floor(spawnInt)===0&&!dino.dead)spawnObstacle();
+  // UT Soul spawn (collectible)
+  if(frame%120===0&&!dino.dead&&score>100&&Math.random()<0.3){
+    obstacles.push({type:"soul",x:W+10,y:GROUND_Y-80,w:24,h:24,passed:false});
+  }
   // Extra spawns at high speed
   if(speed>10&&frame%Math.floor(spawnInt/2)===0&&!dino.dead){
     if(Math.random()<0.3)spawnObstacle();
@@ -151,9 +162,14 @@ function update(){
   // Move obstacles
   for(let i=obstacles.length-1;i>=0;i--){
     let o=obstacles[i];
-    o.x-=speed;
-    if(o.type==="bird")o.wing=(o.wing+0.1)%(Math.PI*2);
-    if(o.x<-60)obstacles.splice(i,1);
+    if(o.type==="meteor"){
+      o.x+=o.vx; o.y+=o.vy;
+      if(o.y>GROUND_Y+20||o.x<-60||o.x>W+60)obstacles.splice(i,1);
+    }else{
+      o.x-=speed;
+      if(o.type==="bird")o.wing=(o.wing+0.1)%(Math.PI*2);
+      if(o.x<-60)obstacles.splice(i,1);
+    }
   }
 
   // Score
@@ -170,10 +186,19 @@ function update(){
     let dw=dino.ducking?50:30,dh=dino.ducking?30:40;
     let dx=dino.x+7,dy=dino.ducking?dino.y+20:dino.y+5;
     for(let o of obstacles){
-      let ox=o.x+3,oy=o.y+3,ow=o.w-6,oh=o.h-6;
-      if(dx<ox+ow&&dx+dw>ox&&dy<oy+oh&&dy+dh>oy){
+      let ox,oy,ow,oh;
+      if(o.type==="meteor"){ox=o.x+5;oy=o.y+5;ow=o.w-10;oh=o.h-10;}
+      else if(o.type==="bone"){ox=o.x+2;oy=o.y+3;ow=o.w-4;oh=o.h-6;}
+      else{ox=o.x+3;oy=o.y+3;ow=o.w-6;oh=o.h-6;}
+      if(o.type==="soul"&&dx<ox+ow&&dx+dw>ox&&dy<oy+oh&&dy+dh>oy){
+        soulActive=performance.now();SFX.powerup();
+        obstacles.splice(i,1);continue;
+      }
+      if(dx<ox+ow&&dx+dw>ox&&dy<oy+oh&&dy+dh>oy&&o.type!=="soul"){
+        // Soul invincibility
+        if(soulActive>0&&performance.now()-soulActive<3000)continue;
         dino.dead=true;dino.blinkTimer=t;
-        gameOverTime=t;stopBGM();SFX.die();
+        gameOverTime=t;soulActive=0;stopBGM();SFX.die();
         let s=Math.floor(score);
         if(s>highScore){highScore=s;try{localStorage.setItem("dinoHS",String(highScore))}catch(e){}}
         state="over";
@@ -237,6 +262,31 @@ function drawDino(){
   ctx.restore();
 }
 
+function drawSoul(o){
+  let x=o.x,y=o.y,pulse=1+Math.sin(frame*0.08)*0.1;
+  ctx.save();ctx.translate(x+12,y+12);ctx.scale(pulse,pulse);
+  // UT Heart (soul)
+  ctx.fillStyle="#ff3b3b";
+  ctx.beginPath();
+  ctx.moveTo(0,-6);ctx.bezierCurveTo(-14,-14,-14,6,0,12);
+  ctx.bezierCurveTo(14,6,14,-14,0,-6);
+  ctx.fill();
+  ctx.strokeStyle="#fff";ctx.lineWidth=1.5;ctx.stroke();
+  // Glow
+  ctx.shadowColor="#ff3b3b";ctx.shadowBlur=15;
+  ctx.fillStyle="rgba(255,59,59,0.3)";ctx.beginPath();ctx.arc(0,0,16,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+}
+
+function drawUTText(text,x,y,size,color){
+  ctx.save();
+  ctx.font="bold "+size+"px monospace";ctx.textAlign="center";
+  ctx.strokeStyle="#000";ctx.lineWidth=3;
+  ctx.strokeText(text,x,y);
+  ctx.fillStyle=color;ctx.fillText(text,x,y);
+  ctx.restore();
+}
+
 function drawCactus(o){
   let x=o.x,y=o.y;
   ctx.fillStyle=night?"#555":"#535353";
@@ -266,6 +316,88 @@ function drawBird(o){
   // Beak
   ctx.fillStyle="#e80";
   ctx.fillRect(x+28,y+12,8,4);
+}
+
+function drawMeteor(o){
+  let x=o.x,y=o.y;
+  ctx.save();
+  // Fire glow
+  let grd=ctx.createRadialGradient(x+15,y+15,2,x+15,y+15,25);
+  grd.addColorStop(0,"#ff0");grd.addColorStop(0.3,"#f80");grd.addColorStop(0.7,"#a40");grd.addColorStop(1,"rgba(100,40,0,0)");
+  ctx.fillStyle=grd;ctx.beginPath();ctx.arc(x+15,y+15,25,0,Math.PI*2);ctx.fill();
+  // Rock body
+  ctx.fillStyle="#844";ctx.beginPath();ctx.arc(x+15,y+15,14,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#633";ctx.beginPath();ctx.arc(x+10,y+10,6,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#522";ctx.beginPath();ctx.arc(x+18,y+18,5,0,Math.PI*2);ctx.fill();
+  // Fire tail
+  ctx.fillStyle="rgba(255,200,50,0.6)";
+  ctx.beginPath();ctx.moveTo(x+5,y+20);ctx.lineTo(x-10,y+30);ctx.lineTo(x+10,y+28);ctx.closePath();ctx.fill();
+  ctx.restore();
+}
+
+function drawSoul(o){
+  let x=o.x,y=o.y,pulse=1+Math.sin(frame*0.08)*0.1;
+  ctx.save();ctx.translate(x+12,y+12);ctx.scale(pulse,pulse);
+  // UT Heart (soul)
+  ctx.fillStyle="#ff3b3b";
+  ctx.beginPath();
+  ctx.moveTo(0,-6);ctx.bezierCurveTo(-14,-14,-14,6,0,12);
+  ctx.bezierCurveTo(14,6,14,-14,0,-6);
+  ctx.fill();
+  ctx.strokeStyle="#fff";ctx.lineWidth=1.5;ctx.stroke();
+  // Glow
+  ctx.shadowColor="#ff3b3b";ctx.shadowBlur=15;
+  ctx.fillStyle="rgba(255,59,59,0.3)";ctx.beginPath();ctx.arc(0,0,16,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+}
+
+function drawUTText(text,x,y,size,color){
+  ctx.save();
+  ctx.font="bold "+size+"px monospace";ctx.textAlign="center";
+  ctx.strokeStyle="#000";ctx.lineWidth=3;
+  ctx.strokeText(text,x,y);
+  ctx.fillStyle=color;ctx.fillText(text,x,y);
+  ctx.restore();
+}
+
+function drawBone(o){
+  let x=o.x,y=o.y;ctx.save();
+  ctx.translate(x+8,y+o.h/2);ctx.rotate(o.ang||0);
+  ctx.fillStyle=night?"#888":"#ddd";
+  ctx.strokeStyle=night?"#666":"#999";ctx.lineWidth=2;
+  // Bone shaft
+  ctx.fillRect(-4,-o.h/2,8,o.h);
+  // Bone ends
+  ctx.beginPath();ctx.arc(-4,-o.h/2+4,6,0,Math.PI*2);ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.arc(-4,o.h/2-4,6,0,Math.PI*2);ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.arc(4,-o.h/2+4,6,0,Math.PI*2);ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.arc(4,o.h/2-4,6,0,Math.PI*2);ctx.fill();ctx.stroke();
+  ctx.restore();
+}
+
+function drawSoul(o){
+  let x=o.x,y=o.y,pulse=1+Math.sin(frame*0.08)*0.1;
+  ctx.save();ctx.translate(x+12,y+12);ctx.scale(pulse,pulse);
+  // UT Heart (soul)
+  ctx.fillStyle="#ff3b3b";
+  ctx.beginPath();
+  ctx.moveTo(0,-6);ctx.bezierCurveTo(-14,-14,-14,6,0,12);
+  ctx.bezierCurveTo(14,6,14,-14,0,-6);
+  ctx.fill();
+  ctx.strokeStyle="#fff";ctx.lineWidth=1.5;ctx.stroke();
+  // Glow
+  ctx.shadowColor="#ff3b3b";ctx.shadowBlur=15;
+  ctx.fillStyle="rgba(255,59,59,0.3)";ctx.beginPath();ctx.arc(0,0,16,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+}
+
+function drawUTText(text,x,y,size,color){
+  ctx.save();
+  ctx.font="bold "+size+"px monospace";ctx.textAlign="center";
+  ctx.strokeStyle="#000";ctx.lineWidth=3;
+  ctx.strokeText(text,x,y);
+  ctx.fillStyle=color;ctx.fillText(text,x,y);
+  ctx.restore();
 }
 
 function drawGround(){
@@ -327,7 +459,11 @@ function draw(){
 
   drawBg();
   for(let o of obstacles){
-    if(o.type==="bird")drawBird(o);else drawCactus(o);
+    if(o.type==="bird")drawBird(o);
+    else if(o.type==="meteor")drawMeteor(o);
+    else if(o.type==="bone")drawBone(o);
+    else if(o.type==="soul")drawSoul(o);
+    else drawCactus(o);
   }
   drawGround();
   if(!dino.dead||state==="over")drawDino();
