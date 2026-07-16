@@ -1,0 +1,387 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>恐龙快跑 - Dino Runner</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#222;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:"Microsoft YaHei","Segoe UI",sans-serif;overflow:hidden;touch-action:none}
+canvas{display:block;border:2px solid rgba(255,255,255,0.08);border-radius:8px;touch-action:none}
+#back-btn{position:fixed;top:16px;left:16px;z-index:10;color:rgba(255,255,255,0.4);text-decoration:none;font-size:14px;padding:6px 14px;border-radius:6px;background:rgba(0,0,0,0.3)}
+#back-btn:hover{color:#fff;background:rgba(0,0,0,0.5)}
+</style>
+</head>
+<body>
+<a id="back-btn" href="../">← 返回</a>
+<canvas id="gc" width="600" height="300"></canvas>
+<script>
+const W=600,H=300,canvas=document.getElementById("gc"),ctx=canvas.getContext("2d");
+
+// ============ Audio ============
+let actx=null;
+function initA(){if(!actx){var A=window.AudioContext||window.webkitAudioContext;if(A){actx=new A();if(actx.state==="suspended")actx.resume()}}else if(actx.state==="suspended")actx.resume()}
+function tone(f,d,t="square",v=0.12){try{var o=actx.createOscillator(),g=actx.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,actx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+d);o.connect(g);g.connect(actx.destination);o.start();o.stop(actx.currentTime+d)}catch(e){}}
+function noise(d,v=0.15){try{var sr=actx.sampleRate,l=sr*d,b=actx.createBuffer(1,l,sr),d2=b.getChannelData(0);for(var i=0;i<l;i++)d2[i]=(Math.random()*2-1)*Math.max(0,1-i/l);var s=actx.createBufferSource();s.buffer=b;var g2=actx.createGain();g2.gain.value=v;s.connect(g2);g2.connect(actx.destination);s.start()}catch(e){}}
+const SFX={jump:()=>tone(520,0.1,"sine",0.1),die:()=>{tone(300,0.15,"sawtooth",0.15);setTimeout(()=>tone(200,0.25,"sawtooth",0.12),120)},score:()=>tone(880,0.06,"sine",0.06)};
+
+// BGM
+let bgmSrc=null,bgmGain=null,bgmPlaying=false;
+function startBGM(){
+  if(bgmPlaying)return;
+  try{
+    initA();if(!actx)return;
+    let sr=actx.sampleRate,total=sr*16,buf=actx.createBuffer(1,total,sr),d=buf.getChannelData(0);
+    for(let i=0;i<total;i++){
+      let t=i/sr;
+      // Bass line: walking rhythm
+      let notes=[82.41,82.41,98.00,98.00,110.00,110.00,98.00,98.00]; // E2,E2,G2,G2,A2,A2,G2,G2
+      let ni=Math.floor(t*2)%notes.length;
+      let v=Math.sin(2*Math.PI*notes[ni]*t)*0.25;
+      // Percussion
+      let beat=(t*4)%1;
+      if(beat<0.05)v+=Math.sin(2*Math.PI*220*t)*0.08*Math.max(0,1-beat/0.05);
+      // Hi-hat
+      let hb=(t*8)%1;
+      if(hb<0.02)v+=Math.random()*0.06*Math.max(0,1-hb/0.02);
+      d[i]=Math.max(-0.6,Math.min(0.6,v));
+    }
+    let src=actx.createBufferSource();src.loop=true;src.buffer=buf;
+    let gn=actx.createGain();gn.gain.value=0.1;
+    src.connect(gn);gn.connect(actx.destination);src.start();
+    bgmSrc=src;bgmGain=gn;bgmPlaying=true;
+  }catch(e){}
+}
+function stopBGM(){if(bgmSrc){try{bgmSrc.stop()}catch(e){}}bgmPlaying=false}
+
+// ============ Game ============
+const GROUND_Y=250;
+let state="menu",score=0,highScore=0,gameOverTime=0;
+let speed=6,baseSpeed=6,obstacles=[],groundX=0;
+let frame=0,night=false,nightTimer=0;
+
+// Dino
+const dino={
+  x:80,y:GROUND_Y-50,w:44,h:50,
+  vy:0,jumping:false,ducking:false,
+  grounded:true,legFrame:0,legTimer:0,
+  dead:false,blinkTimer:0
+};
+
+function reset(){
+  score=0;speed=baseSpeed;obstacles=[];groundX=0;frame=0;
+  night=false;nightTimer=0;
+  dino.y=GROUND_Y-50;dino.vy=0;dino.jumping=false;dino.ducking=false;
+  dino.grounded=true;dino.legFrame=0;dino.legTimer=0;dino.dead=false;dino.blinkTimer=0;
+  gameOverTime=0;
+}
+
+// Load high score
+try{var hs=localStorage.getItem("dinoHS");if(hs)highScore=parseInt(hs)}catch(e){}
+
+// Obstacles
+function spawnObstacle(){
+  let r=Math.random();
+  if(score>200&&r<0.2){
+    // Pterodactyl
+    let y=GROUND_Y-60-Math.random()*40;
+    obstacles.push({type:"bird",x:W+20,y:y,w:42,h:30,passed:false,wing:0});
+  }else{
+    let type=r<0.6?"small":"large";
+    let w=type==="small"?20:34,h=type==="small"?36:50;
+    obstacles.push({type,type,x:W+20,y:GROUND_Y-h,w,h,passed:false});
+  }
+}
+
+// Physics
+function update(){
+  frame++;let t=performance.now();
+
+  if(state==="menu"||state==="over"){nightTimer=0;return}
+
+  // Speed up
+  speed=baseSpeed+Math.floor(score/100)*0.5;
+  if(speed>16)speed=16;
+
+  // Night cycle (every 500 points)
+  night=Math.floor(score/500)%2===1;
+
+  // Ground
+  groundX=(groundX-speed)%20;
+
+  // Dino physics
+  if(!dino.dead){
+    if(dino.jumping){
+      dino.vy+=0.6;
+      dino.y+=dino.vy;
+      if(dino.y>=GROUND_Y-50){
+        dino.y=GROUND_Y-50;dino.vy=0;dino.jumping=false;dino.grounded=true;
+      }
+      dino.ducking=false;
+    }
+    // Leg animation
+    if(dino.grounded&&!dino.dead){
+      dino.legTimer+=speed;
+      if(dino.legTimer>20){dino.legTimer=0;dino.legFrame=(dino.legFrame+1)%2}
+    }
+  }
+
+  // Spawn obstacles
+  let spawnInt=Math.max(60,120-speed*4);
+  if(frame%Math.floor(spawnInt)===0&&!dino.dead)spawnObstacle();
+  // Extra spawns at high speed
+  if(speed>10&&frame%Math.floor(spawnInt/2)===0&&!dino.dead){
+    if(Math.random()<0.3)spawnObstacle();
+  }
+
+  // Move obstacles
+  for(let i=obstacles.length-1;i>=0;i--){
+    let o=obstacles[i];
+    o.x-=speed;
+    if(o.type==="bird")o.wing=(o.wing+0.1)%(Math.PI*2);
+    if(o.x<-60)obstacles.splice(i,1);
+  }
+
+  // Score
+  if(!dino.dead){
+    score+=0.5;
+    // Passed obstacle bonus
+    for(let o of obstacles){
+      if(!o.passed&&o.x+o.w<dino.x){o.passed=true;SFX.score()}
+    }
+  }
+
+  // Collision
+  if(!dino.dead){
+    let dw=dino.ducking?50:30,dh=dino.ducking?30:40;
+    let dx=dino.x+7,dy=dino.ducking?dino.y+20:dino.y+5;
+    for(let o of obstacles){
+      let ox=o.x+3,oy=o.y+3,ow=o.w-6,oh=o.h-6;
+      if(dx<ox+ow&&dx+dw>ox&&dy<oy+oh&&dy+dh>oy){
+        dino.dead=true;dino.blinkTimer=t;
+        gameOverTime=t;stopBGM();SFX.die();
+        let s=Math.floor(score);
+        if(s>highScore){highScore=s;try{localStorage.setItem("dinoHS",String(highScore))}catch(e){}}
+        state="over";
+        break;
+      }
+    }
+  }
+}
+
+// ============ Drawing ============
+function drawDino(){
+  let x=dino.x,y=dino.y;
+  ctx.save();
+
+  if(dino.dead&&Math.floor(frame/6)%2===0){ctx.globalAlpha=0.5}
+
+  let h=dino.ducking?30:50;
+  let w=dino.ducking?50:44;
+
+  // Body
+  ctx.fillStyle=night?"#666":"#535353";
+  ctx.fillRect(x+8,y+5,w-16,h-8);
+
+  // Head
+  ctx.fillRect(x+w-16,y-8,20,18);
+  // Eye
+  ctx.fillStyle="#fff";
+  ctx.fillRect(x+w-8,y-4,6,6);
+  ctx.fillStyle=night?"#ccc":"#222";
+  ctx.fillRect(x+w-6,y-2,3,4);
+  // Mouth
+  if(dino.dead){ctx.fillStyle="#fff";ctx.fillRect(x+w-4,y+4,3,2)}
+
+  // Legs
+  if(dino.ducking){
+    ctx.fillStyle=night?"#888":"#535353";
+    ctx.fillRect(x+8,y+28,30,6);
+    ctx.fillRect(x+12,y+28,6,8);
+    ctx.fillRect(x+30,y+28,6,8);
+  }else if(dino.grounded){
+    ctx.fillStyle=night?"#888":"#535353";
+    if(dino.legFrame===0){
+      ctx.fillRect(x+10,y+h-5,8,12);
+      ctx.fillRect(x+22,y+h-5,8,8);
+    }else{
+      ctx.fillRect(x+10,y+h-5,8,8);
+      ctx.fillRect(x+22,y+h-5,8,12);
+    }
+  }else{
+    // Jumping - legs tucked
+    ctx.fillStyle=night?"#888":"#535353";
+    ctx.fillRect(x+12,y+h-5,6,10);
+    ctx.fillRect(x+24,y+h-5,6,10);
+  }
+
+  // Tail
+  ctx.fillStyle=night?"#666":"#535353";
+  ctx.fillRect(x-6,y+10,10,6);
+  ctx.fillRect(x-10,y+14,8,4);
+
+  ctx.restore();
+}
+
+function drawCactus(o){
+  let x=o.x,y=o.y;
+  ctx.fillStyle=night?"#555":"#535353";
+  if(o.type==="small"){
+    ctx.fillRect(x+6,y,8,36);
+    ctx.fillRect(x,y+8,6,6);
+    ctx.fillRect(x+16,y+4,6,8);
+  }else if(o.type==="large"){
+    ctx.fillRect(x+10,y,12,50);
+    ctx.fillRect(x,y+10,10,8);
+    ctx.fillRect(x+24,y+14,10,6);
+    ctx.fillRect(x+6,y+28,8,6);
+    ctx.fillRect(x+20,y+32,8,6);
+  }
+}
+
+function drawBird(o){
+  let x=o.x,y=o.y,wf=Math.sin(o.wing)*0.5+0.5;
+  ctx.fillStyle=night?"#555":"#535353";
+  // Body
+  ctx.fillRect(x+10,y+8,22,14);
+  // Wings
+  ctx.beginPath();
+  ctx.moveTo(x+14,y+10);ctx.lineTo(x+4,y+4-wf*8);ctx.lineTo(x+14,y+12);ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x+18,y+12);ctx.lineTo(x+34,y+4-wf*8);ctx.lineTo(x+26,y+14);ctx.fill();
+  // Beak
+  ctx.fillStyle="#e80";
+  ctx.fillRect(x+28,y+12,8,4);
+}
+
+function drawGround(){
+  ctx.strokeStyle=night?"#555":"#535353";
+  ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(0,GROUND_Y);ctx.lineTo(W,GROUND_Y);ctx.stroke();
+  // Texture
+  for(let i=0;i<W;i+=20){
+    let gx=((i+groundX)%W+W)%W;
+    if(gx<W){
+      ctx.fillStyle=night?"#444":"#888";
+      ctx.fillRect(gx,GROUND_Y+2,3,2);
+      ctx.fillRect(gx+8,GROUND_Y+5,2,2);
+    }
+  }
+}
+
+function drawBg(){
+  if(night){
+    ctx.fillStyle="#1a1a2e";ctx.fillRect(0,0,W,GROUND_Y);
+    // Stars
+    for(let i=0;i<20;i++){
+      let sx=(i*137+frame*0.02)%W;
+      let sy=10+(i*47)%120;
+      ctx.fillStyle=`rgba(255,255,255,${0.3+Math.sin(i+frame*0.02)*0.2})`;
+      ctx.fillRect(sx,sy,2,2);
+    }
+    // Moon
+    ctx.fillStyle="#ddd";ctx.beginPath();ctx.arc(W-60,40,20,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle="#1a1a2e";ctx.beginPath();ctx.arc(W-50,35,17,0,Math.PI*2);ctx.fill();
+  }else{
+    ctx.fillStyle="#f7f7f7";ctx.fillRect(0,0,W,GROUND_Y);
+    // Cloud
+    ctx.fillStyle="rgba(200,200,200,0.5)";
+    ctx.beginPath();ctx.arc(100+frame*0.1%300,40,20,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(120+frame*0.1%300,35,25,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(140+frame*0.1%300,40,20,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(350+frame*0.05%400,60,18,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(370+frame*0.05%400,55,22,0,Math.PI*2);ctx.fill();
+  }
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+
+  if(state==="menu"){
+    drawBg();drawGround();
+    // Dino standing
+    dino.legFrame=0;drawDino();
+    ctx.fillStyle="#535353";ctx.font="bold 28px monospace";ctx.textAlign="center";
+    ctx.fillText("DINO RUNNER",W/2,60);
+    ctx.fillStyle="#888";ctx.font="16px sans-serif";ctx.textAlign="center";
+    ctx.fillText("按 SPACE / ↑ / 点击 跳跃",W/2,90);
+    ctx.fillText("按 ↓ 低头躲翼龙",W/2,112);
+    if(highScore>0){ctx.fillStyle="#999";ctx.font="14px sans-serif";ctx.fillText("最高分: "+highScore,W/2,145)}
+    if(Math.floor(frame/30)%2===0){ctx.fillStyle="#535353";ctx.font="18px sans-serif";ctx.fillText("点击开始",W/2,190)}
+    return;
+  }
+
+  drawBg();
+  for(let o of obstacles){
+    if(o.type==="bird")drawBird(o);else drawCactus(o);
+  }
+  drawGround();
+  if(!dino.dead||state==="over")drawDino();
+
+  // Score
+  ctx.fillStyle=night?"#ddd":"#535353";
+  ctx.font="bold 18px monospace";ctx.textAlign="right";
+  let s=Math.floor(score);
+  ctx.fillText(String(s).padStart(5,"0"),W-20,30);
+  if(highScore>0){
+    ctx.font="12px monospace";ctx.fillText("HI "+String(highScore).padStart(5,"0"),W-20,15);
+  }
+
+  // Speed indicator
+  ctx.fillStyle=night?"#666":"#aaa";ctx.font="12px sans-serif";ctx.textAlign="left";
+  ctx.fillText("速度: "+Math.floor(speed),10,15);
+
+  // Game over
+  if(state==="over"&&frame>10){
+    ctx.fillStyle="rgba(255,255,255,0.7)";ctx.font="bold 36px monospace";ctx.textAlign="center";
+    ctx.fillText("GAME OVER",W/2,130);
+    if(score>=highScore&&score>0){
+      ctx.fillStyle="#e80";ctx.font="18px sans-serif";ctx.fillText("新纪录!",W/2,160);
+    }
+    if(frame>40&&Math.floor(frame/30)%2===0){
+      ctx.fillStyle="#888";ctx.font="16px sans-serif";ctx.fillText("点击重新开始",W/2,200);
+    }
+  }
+}
+
+// ============ Input ============
+function handleAction(e){
+  initA();
+  if(state==="menu"){reset();state="playing";frame=0;startBGM();return}
+  if(state==="over"&&frame-gameOverTime>20){
+    reset();state="playing";frame=0;startBGM();return
+  }
+  if(state==="playing"&&!dino.dead&&dino.grounded){
+    dino.jumping=true;dino.grounded=false;dino.vy=-12;SFX.jump();
+  }
+}
+
+function handleDuck(down){
+  if(state==="playing"&&!dino.dead){
+    if(down&&dino.grounded){dino.ducking=true}
+    else if(!down){dino.ducking=false}
+  }
+}
+
+document.addEventListener("keydown",e=>{
+  initA();
+  if(e.code==="Space"||e.code==="ArrowUp"){e.preventDefault();handleAction(e)}
+  if(e.code==="ArrowDown"){e.preventDefault();handleDuck(true)}
+  if(e.code==="KeyR"&&state==="over"){reset();state="playing";frame=0;startBGM()}
+});
+document.addEventListener("keyup",e=>{
+  if(e.code==="ArrowDown")handleDuck(false);
+});
+
+canvas.addEventListener("click",handleAction);
+canvas.addEventListener("touchstart",e=>{e.preventDefault();handleAction(e);initA()},{passive:false});
+
+// ============ Loop ============
+reset();
+function loop(){update();draw();requestAnimationFrame(loop)}
+loop();
+console.log("Dino Runner started!");
+</script>
+</body>
+</html>
