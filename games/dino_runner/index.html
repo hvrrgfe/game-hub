@@ -11,11 +11,24 @@ body{background:#222;display:flex;justify-content:center;align-items:center;min-
 canvas{display:block;border:2px solid rgba(255,255,255,0.08);border-radius:8px;touch-action:none}
 #back-btn{position:fixed;top:16px;left:16px;z-index:10;color:rgba(255,255,255,0.4);text-decoration:none;font-size:14px;padding:6px 14px;border-radius:6px;background:rgba(0,0,0,0.3)}
 #back-btn:hover{color:#fff;background:rgba(0,0,0,0.5)}
+@media (max-width:620px){canvas{width:100vw;height:auto;border-radius:0;border:none}#game-wrap{width:100vw}}
+/* Virtual buttons */
+.vbtn{position:absolute;z-index:5;opacity:0.35;border-radius:50%;background:rgba(255,255,255,0.15);border:2px solid rgba(255,255,255,0.2);touch-action:none;-webkit-tap-highlight-color:transparent}
+.vbtn:active{opacity:0.6;background:rgba(255,255,255,0.25)}
+#btn-jump{right:20px;bottom:30px;width:90px;height:90px}
+#btn-jump::after{content:"\u8df3";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:20px;font-weight:bold;font-family:"Microsoft YaHei",sans-serif}
+#btn-duck{left:20px;bottom:30px;width:80px;height:80px}
+#btn-duck::after{content:"\u4f4e\u5934";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:16px;font-weight:bold;font-family:"Microsoft YaHei",sans-serif}
+@media(min-width:621px){.vbtn{display:none}}
 </style>
 </head>
 <body>
 <a id="back-btn" href="../">← 返回</a>
+<div id="game-wrap" style="position:relative;display:inline-block;max-width:100vw">
 <canvas id="gc" width="600" height="300"></canvas>
+<div id="btn-jump" class="vbtn"></div>
+<div id="btn-duck" class="vbtn"></div>
+</div>
 <script>
 const W=600,H=300,canvas=document.getElementById("gc"),ctx=canvas.getContext("2d");
 
@@ -382,6 +395,27 @@ reset();
 function loop(){update();draw();requestAnimationFrame(loop)}
 loop();
 console.log("Dino Runner started!");
+// Virtual button handlers
+document.getElementById("btn-jump").addEventListener("touchstart",function(e){e.preventDefault();handleAction(e);initA()},{passive:false});
+document.getElementById("btn-jump").addEventListener("mousedown",function(e){e.preventDefault();handleAction(e);initA()});
+document.getElementById("btn-duck").addEventListener("touchstart",function(e){e.preventDefault();handleDuck(true);},{passive:false});
+document.getElementById("btn-duck").addEventListener("touchend",function(e){e.preventDefault();handleDuck(false);},{passive:false});
+document.getElementById("btn-duck").addEventListener("touchcancel",function(e){handleDuck(false);});
+document.getElementById("btn-duck").addEventListener("mousedown",function(e){e.preventDefault();handleDuck(true);});
+document.getElementById("btn-duck").addEventListener("mouseup",function(e){handleDuck(false);});
+
+// Responsive canvas scaling
+function resizeCanvas(){
+  var c=document.getElementById("gc"),wrap=document.getElementById("game-wrap");
+  if(window.innerWidth<620){
+    var scale=window.innerWidth/600;
+    c.style.width="100vw";c.style.height=(300*scale)+"px";
+  }else{
+    c.style.width="";c.style.height="";
+  }
+}
+window.addEventListener("resize",resizeCanvas);
+resizeCanvas();
 </script>
 </body>
 </html>

@@ -62,6 +62,16 @@ header p { color: #aaa; font-size: 16px; }
   color: #8cf;
 }
 
+
+/* Mobile responsive */
+@media (max-width: 640px) {
+  header h1 { font-size: 28px; }
+  header { padding: 24px 16px 16px; }
+  .game-grid { grid-template-columns: 1fr; gap: 16px; padding: 12px; }
+  .card-preview { height: 120px; }
+  .preview-icon { font-size: 40px; }
+  .game-card { border-radius: 12px; }
+}
 footer {
   text-align: center;
   padding: 32px;

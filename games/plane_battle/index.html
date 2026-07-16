@@ -23,7 +23,7 @@ body{
   border-radius:8px;
   box-shadow:0 0 40px rgba(0,100,255,0.2);
 }
-canvas{display:block;background:#1e1e28;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+canvas{display:block;background:#1e1e28;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;max-width:100vw}
 #back-btn{
   position:fixed;top:16px;left:16px;
   color:rgba(255,255,255,0.4);
@@ -34,6 +34,9 @@ canvas{display:block;background:#1e1e28;touch-action:none;-webkit-touch-callout:
   z-index:10;
 }
 #back-btn:hover{color:#fff;background:rgba(255,255,255,0.12)}
+@media (max-width:490px){canvas{width:100vw;height:auto;border-radius:0}#game-wrapper{border:none;border-radius:0;width:100vw}}
+#btn-auto{position:fixed;right:12px;top:60px;z-index:10;width:60px;height:32px;border-radius:16px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.3);color:rgba(255,255,255,0.5);font-size:12px;text-align:center;line-height:32px;touch-action:none;cursor:pointer;font-family:"Microsoft YaHei",sans-serif}
+#btn-auto.on{background:rgba(255,100,0,0.3);border-color:#f80;color:#fff}
 </style>
 </head>
 <body>
@@ -55,6 +58,21 @@ document.getElementById("play-overlay").addEventListener("click", function() {
   var ctx = new (window.AudioContext || window.webkitAudioContext)();
   ctx.resume();
 });
+</script>
+<div id="btn-auto">自动</div>
+<script>
+// Auto-fire toggle for mobile
+var autoFire=false;
+document.getElementById("btn-auto").addEventListener("click",function(){
+  autoFire=!autoFire;this.className=autoFire?"on":"";
+});
+// Auto-fire timer (game loads after this script, so use DOM-ready)
+setInterval(function(){
+  if(typeof game!="undefined"&&autoFire&&game.state==="playing"){
+    var t=performance.now(),p=game.player;
+    if(t-p.lastShot>p.shootDelay){p.lastShot=t;game.playerShoot()}
+  }
+},80);
 </script>
 </body>
 </html>
