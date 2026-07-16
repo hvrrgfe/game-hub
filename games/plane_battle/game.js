@@ -6,7 +6,15 @@ const W = 480, H = 700;
 // ===================== 音效 (Web Audio API) =====================
 let audioCtx = null;
 function initAudio() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (!audioCtx) {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) {
+      audioCtx = new AC();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+  } else if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
 }
 function playTone(freq, dur, type = "square", vol = 0.15) {
   try {
