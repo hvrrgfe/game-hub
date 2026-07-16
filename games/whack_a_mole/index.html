@@ -1,0 +1,306 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>打地鼠 - Whack-a-Mole</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:linear-gradient(180deg,#1a3a1a,#0d260d);
+  display:flex;justify-content:center;align-items:center;
+  min-height:100vh;font-family:"Microsoft YaHei","Segoe UI",sans-serif;
+  overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;
+}
+#game-wrap{position:relative;border:3px solid #5a3a1a;border-radius:12px;overflow:hidden;box-shadow:0 0 60px rgba(0,100,0,0.3)}
+canvas{display:block;background:#4a8c3f;cursor:pointer;touch-action:none}
+#back-btn{
+  position:fixed;top:16px;left:16px;z-index:10;
+  color:rgba(255,255,255,0.4);text-decoration:none;font-size:14px;
+  padding:6px 14px;border-radius:6px;background:rgba(0,0,0,0.3);
+}
+#back-btn:hover{color:#fff;background:rgba(0,0,0,0.5)}
+</style>
+</head>
+<body>
+<a id="back-btn" href="../">← 返回</a>
+<div id="game-wrap"><canvas id="gc" width="480" height="700"></canvas></div>
+<script>
+const W=480,H=700,canvas=document.getElementById("gc"),ctx=canvas.getContext("2d");
+
+// Audio
+let actx=null;
+function initA(){if(!actx){var A=window.AudioContext||window.webkitAudioContext;if(A){actx=new A();if(actx.state==="suspended")actx.resume()}}else if(actx.state==="suspended")actx.resume()}
+function tone(f,d,t="square",v=0.15){try{initA();var o=actx.createOscillator(),g=actx.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,actx.currentTime);g.gain.exponentialRampToValueAtTime(0.001,actx.currentTime+d);o.connect(g);g.connect(actx.destination);o.start();o.stop(actx.currentTime+d)}catch(e){}}
+function noise(d,v=0.2){try{initA();var sr=actx.sampleRate,l=sr*d,b=actx.createBuffer(1,l,sr),d2=b.getChannelData(0);for(var i=0;i<l;i++)d2[i]=(Math.random()*2-1)*Math.max(0,1-i/l);var s=actx.createBufferSource();s.buffer=b;var g2=actx.createGain();g2.gain.value=v;s.connect(g2);g2.connect(actx.destination);s.start()}catch(e){}}
+const SFX={hit:()=>tone(660,0.1,"square",0.12),miss:()=>tone(220,0.15,"sawtooth",0.1),start:()=>tone(880,0.15,"sine",0.15),over:()=>{tone(440,0.3,"sawtooth",0.2);setTimeout(()=>tone(330,0.3,"sawtooth",0.2),200)}};
+
+// ============ Game ============
+const COLS=3,ROWS=3;
+const HOLE_W=100,HOLE_H=80;
+const GRID_X=(W-COLS*HOLE_W)/2,GRID_Y=180;
+const GAME_DURATION=30;
+let state="menu",score=0,highScore=parseInt(localStorage.getItem("wamHS")||"0");
+let timeLeft=GAME_DURATION,timer=0,moles=[],lastSpawn=0,moleCount=0;
+let hitCount=0,missCount=0,combo=0,maxCombo=0;
+let animFrame=0;
+
+function mkHole(i){return{i,x:GRID_X+(i%COLS)*HOLE_W+HOLE_W/2,y:GRID_Y+Math.floor(i/COLS)*HOLE_H+HOLE_H/2,up:false,show:0,hit:false,alive:false,dir:1,life:0}}
+
+function reset(){
+  score=0;timeLeft=GAME_DURATION;timer=0;moleCount=0;lastSpawn=0;
+  hitCount=0;missCount=0;combo=0;maxCombo=0;
+  moles=[];for(let i=0;i<COLS*ROWS;i++)moles.push(mkHole(i));
+}
+
+function spawnMole(){
+  // Find holes that are down
+  let down=moles.filter(m=>!m.alive);
+  if(down.length===0)return;
+  let h=down[Math.floor(Math.random()*down.length)];
+  h.alive=true;h.up=false;h.show=0;h.hit=false;h.life=0;h.dir=1;
+  moleCount++;
+}
+
+function getHit(x,y){
+  for(let m of moles){
+    if(!m.alive||m.hit)continue;
+    let dx=m.x-x,dy=m.y-y-20;
+    if(dx*dx+dy*dy<45*45)return m;
+  }
+  return null;
+}
+
+function update(){
+  animFrame++;
+  let t=performance.now();
+  if(state==="menu"||state==="over")return;
+  
+  // Timer
+  if(timer===0)timer=t;
+  let elapsed=(t-timer)/1000;
+  timeLeft=Math.max(0,GAME_DURATION-elapsed);
+  if(timeLeft<=0){
+    state="over";SFX.over();
+    if(score>highScore){highScore=score;localStorage.setItem("wamHS",String(highScore))}
+    return;
+  }
+  
+  // Spawn moles - faster as time decreases
+  let spawnInt=Math.max(500,2000-timeLeft*50);
+  if(t-lastSpawn>spawnInt&&moleCount<30+timeLeft){lastSpawn=t;spawnMole()}
+  
+  // Update moles
+  for(let m of moles){
+    if(!m.alive)continue;
+    m.life++;
+    if(!m.up){
+      m.show+=0.05;
+      if(m.show>=1){m.show=1;m.up=true;m.life=0}
+    }else{
+      if(m.life>60+Math.random()*40){ // Stay up 0.6-1s
+        if(!m.hit){missCount++;combo=0}
+        m.alive=false;m.show=0;m.up=false
+      }
+    }
+  }
+}
+
+function drawBg(){
+  // Grass background
+  let g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,"#3a7a30");g.addColorStop(1,"#2a5a20");
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  // Sky
+  ctx.fillStyle="rgba(100,180,255,0.15)";
+  ctx.fillRect(0,0,W,GRID_Y-30);
+  // Clouds
+  ctx.fillStyle="rgba(255,255,255,0.1)";
+  for(let i=0;i<4;i++){let cx=(i*130+animFrame*0.2)%(W+100)-50;ctx.beginPath();ctx.ellipse(cx,40+i*25,50,15,0,0,Math.PI*2);ctx.fill()}
+}
+
+function drawHole(m){
+  let cx=m.x,cy=m.y;
+  // Hole shadow
+  ctx.fillStyle="#2a1a0a";
+  ctx.beginPath();ctx.ellipse(cx,cy+25,42,14,0,0,Math.PI*2);ctx.fill();
+  // Hole
+  ctx.fillStyle="#3a2a1a";
+  ctx.beginPath();ctx.ellipse(cx,cy+20,38,10,0,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle="#5a3a1a";ctx.lineWidth=2;
+  ctx.beginPath();ctx.ellipse(cx,cy+20,38,10,0,0,Math.PI*2);ctx.stroke();
+}
+
+function drawMole(m){
+  let cx=m.x,cy=m.y;
+  let p=m.show;
+  if(p<=0)return;
+  
+  // Ease out bounce
+  let s=Math.min(1,p);
+  let sy=30*(1-s);
+  
+  ctx.save();
+  
+  // Body
+  let by=cy+25-sy;
+  ctx.fillStyle=m.hit?"#c44":"#8B5E3C";
+  ctx.beginPath();ctx.ellipse(cx,by-10,32*s,25*s,0,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle="#6a3e1c";ctx.lineWidth=2;
+  ctx.beginPath();ctx.ellipse(cx,by-10,32*s,25*s,0,0,Math.PI*2);ctx.stroke();
+  
+  // Belly
+  ctx.fillStyle=m.hit?"#e66":"#C4885C";
+  ctx.beginPath();ctx.ellipse(cx,by-8,20*s,18*s,0,0,Math.PI*2);ctx.fill();
+  
+  // Eyes
+  let eyeY=by-18*s;
+  let eyeOff=m.hit?3:0;
+  ctx.fillStyle="#222";
+  ctx.beginPath();ctx.arc(cx-12*s+eyeOff,eyeY,5*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(cx+12*s+eyeOff,eyeY,5*s,0,Math.PI*2);ctx.fill();
+  // Eye shine
+  ctx.fillStyle="#fff";
+  ctx.beginPath();ctx.arc(cx-10*s+eyeOff,eyeY-2*s,2*s,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(cx+14*s+eyeOff,eyeY-2*s,2*s,0,Math.PI*2);ctx.fill();
+  
+  // Nose
+  ctx.fillStyle="#e88";
+  ctx.beginPath();ctx.ellipse(cx,by-8*s,6*s,4*s,0,0,Math.PI*2);ctx.fill();
+  
+  // Whiskers
+  ctx.strokeStyle="#666";ctx.lineWidth=1.5*s;
+  ctx.beginPath();ctx.moveTo(cx-8*s,by-10*s);ctx.lineTo(cx-25*s,by-15*s);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx-8*s,by-6*s);ctx.lineTo(cx-25*s,by-5*s);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx+8*s,by-10*s);ctx.lineTo(cx+25*s,by-15*s);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx+8*s,by-6*s);ctx.lineTo(cx+25*s,by-5*s);ctx.stroke();
+  
+  // Hit stars
+  if(m.hit){
+    ctx.fillStyle="#ff0";
+    for(let i=0;i<5;i++){
+      let a=i*1.256+animFrame*0.1;
+      let r=20+m.life*0.5;
+      ctx.beginPath();
+      ctx.arc(cx+Math.cos(a)*r,by-15+Math.sin(a)*r,4,0,Math.PI*2);
+      ctx.fill();
+    }
+  }
+  
+  ctx.restore();
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  drawBg();
+  
+  // Title area
+  if(state==="menu"){
+    ctx.fillStyle="rgba(0,0,0,0.3)";ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="#ff0";ctx.font="bold 52px sans-serif";ctx.textAlign="center";
+    ctx.fillText("打 地 鼠",W/2,110);
+    ctx.fillStyle="#fff";ctx.font="18px sans-serif";
+    ctx.fillText("WHACK-A-MOLE",W/2,145);
+    ctx.fillStyle="#aaa";ctx.font="16px sans-serif";
+    ctx.fillText("点中地鼠得分，30秒挑战",W/2,175);
+    if(highScore>0){
+      ctx.fillStyle="#fe0";ctx.font="18px sans-serif";
+      ctx.fillText("最高分: "+highScore,W/2,GRID_Y+ROWS*HOLE_H+30);
+    }
+    if(Math.floor(animFrame/30)%2===0){
+      ctx.fillStyle="#fff";ctx.font="22px sans-serif";
+      ctx.fillText("点击开始",W/2,GRID_Y+ROWS*HOLE_H+80);
+    }
+    ctx.fillStyle="#444";ctx.font="12px sans-serif";ctx.textAlign="left";
+    ctx.fillText("v1.0",10,H-15);
+    return;
+  }
+  
+  // Draw holes and moles
+  for(let m of moles){
+    drawHole(m);
+    if(m.alive||m.show>0)drawMole(m);
+  }
+  
+  // HUD
+  ctx.fillStyle="rgba(0,0,0,0.5)";ctx.beginPath();ctx.roundRect(10,10,460,50,8);ctx.fill();
+  ctx.fillStyle="#fff";ctx.font="bold 20px sans-serif";ctx.textAlign="center";
+  ctx.fillText("分数: "+score,W/2,32);
+  ctx.fillStyle="#ff0";ctx.font="18px sans-serif";ctx.textAlign="left";
+  ctx.fillText("⏱ "+Math.ceil(timeLeft)+"s",20,42);
+  ctx.fillStyle="#f80";ctx.textAlign="right";
+  ctx.fillText("🔥 "+combo,W-20,42);
+  
+  // Hit/Miss indicators
+  ctx.fillStyle="rgba(0,0,0,0.3)";ctx.beginPath();ctx.roundRect(W/2-60,70,120,22,4);ctx.fill();
+  ctx.fillStyle="#3c6";ctx.font="13px sans-serif";ctx.textAlign="left";
+  ctx.fillText("✓ "+hitCount,W/2-50,86);
+  ctx.fillStyle="#f44";ctx.textAlign="right";
+  ctx.fillText("✗ "+missCount,W/2+50,86);
+  
+  // Combo display
+  if(combo>=3){
+    ctx.fillStyle="#f80";ctx.font="bold 16px sans-serif";ctx.textAlign="center";
+    ctx.fillText(combo+"连击!",W/2,120);
+  }
+  
+  // Game over
+  if(state==="over"){
+    ctx.fillStyle="rgba(0,0,0,0.7)";ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="#f44";ctx.font="bold 48px sans-serif";ctx.textAlign="center";
+    ctx.fillText("时 间 到!",W/2,200);
+    ctx.fillStyle="#fff";ctx.font="28px sans-serif";
+    ctx.fillText("得分: "+score,W/2,270);
+    if(score>=highScore&&score>0){
+      ctx.fillStyle="#ff0";ctx.font="32px sans-serif";
+      ctx.fillText("新纪录! 🎉",W/2,325);
+    }
+    ctx.fillStyle="#fe0";ctx.font="20px sans-serif";
+    ctx.fillText("最高分: "+highScore,W/2,370);
+    ctx.fillStyle="#888";ctx.font="16px sans-serif";
+    ctx.fillText("命中: "+hitCount+"  连击最高: "+maxCombo,W/2,410);
+    if(Math.floor(animFrame/30)%2===0){
+      ctx.fillStyle="#fff";ctx.font="22px sans-serif";
+      ctx.fillText("点击重新开始",W/2,480);
+    }
+  }
+}
+
+// ============ Input ============
+function handleClick(e){
+  initA();let r=canvas.getBoundingClientRect();
+  let sx=r.width/W,sy=r.height/H;
+  let x,y;
+  if(e.touches){x=(e.touches[0].clientX-r.left)/sx;y=(e.touches[0].clientY-r.top)/sy}
+  else{x=(e.clientX-r.left)/sx;y=(e.clientY-r.top)/sy}
+  
+  if(state==="menu"){reset();timer=0;state="playing";SFX.start();return}
+  if(state==="over"){reset();timer=0;state="playing";SFX.start();return}
+  
+  let hit=getHit(x,y);
+  if(hit){
+    if(!hit.hit){
+      hit.hit=true;score+=10+combo*2;
+      hitCount++;combo++;if(combo>maxCombo)maxCombo=combo;
+      SFX.hit();
+      // Hide after short delay
+      setTimeout(()=>{hit.alive=false;hit.show=0},200);
+    }
+  }else{
+    combo=0;missCount++;SFX.miss();
+  }
+}
+
+canvas.addEventListener("click",handleClick);
+canvas.addEventListener("touchstart",function(e){e.preventDefault();handleClick(e)},{passive:false});
+canvas.addEventListener("click",initA);
+
+// ============ Loop ============
+reset();
+function loop(){update();draw();requestAnimationFrame(loop)}
+loop();
+console.log("打地鼠已启动!");
+</script>
+</body>
+</html>
